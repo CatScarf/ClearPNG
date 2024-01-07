@@ -93,7 +93,7 @@ class ClearHandler:
             self.hint()
             if not result.is_success():
                 messagebox.showerror("转换错误 Convert Error", f"\n{result.msg}")
-        self.windows.after(10, self.check)
+        self.windows.after(500, self.check)
         
 
     def hint(self):
