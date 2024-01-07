@@ -2,6 +2,7 @@ import os
 import ctypes
 import tkinter as tk
 from tkinter import messagebox
+import traceback
 
 from multiprocessing import Queue, Process
 
@@ -23,18 +24,21 @@ def clear_png(png_path: str):
     # Pillow supports limited basic metadata.
     # We can use it to reduce the size of the PNG file.
 
-    img = Image.open(png_path)
-    pnginfo = PngImagePlugin.PngInfo()
-    for key, value in img.info.items():
-        pnginfo.add_text(str(key), str(value))
+    with Image.open(png_path) as img:
+        pnginfo = PngImagePlugin.PngInfo()
+        for key, value in img.info.items():
+            pnginfo.add_text(str(key), str(value))
 
-    # Save
-
-    img.save(save_path, "png", pnginfo=pnginfo)
-    img.close()
+        # Save
+        try:
+            img.save(save_path, pnginfo=pnginfo)
+        except:
+            data = list(img.getdata())
+            image_without_metadata = Image.new(img.mode, img.size)
+            image_without_metadata.putdata(data)
+            image_without_metadata.save(save_path)
 
     return save_path
-
 
 class ConverResult:
     def __init__(self, success: bool, msg: str):
@@ -52,7 +56,10 @@ def worker(inq, outq):
             cleared_path = clear_png(path)
             outq.put(ConverResult(True, cleared_path))
         except Exception as e:
-            outq.put(ConverResult(False, str(e)))
+            outq.put(ConverResult(
+                False, 
+                f"Convert {path} failed\n{traceback.format_exc()}"
+            ))
 
 
 class ClearHandler:
