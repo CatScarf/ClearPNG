@@ -3,7 +3,7 @@ import ctypes
 import tkinter as tk
 from tkinter import messagebox
 
-from PIL import Image
+from PIL import Image, PngImagePlugin
 from tkinterdnd2 import DND_FILES, TkinterDnD  # type: ignore
 
 HINT_WATING = "请拖拽PNG文件(们)到这里\nDrag and drop PNG file(s) here"
@@ -24,7 +24,15 @@ def clear_png(png_path: str):
     # We can use it to reduce the size of the PNG file.
 
     img = Image.open(png_path)
-    img.save(save_path, quality=100, **img.info)  
+    pnginfo = PngImagePlugin.PngInfo()
+    for key, value in img.info.items():
+        pnginfo.add_text(str(key), str(value))
+
+    # Save
+        
+    img.save(save_path, "png", pnginfo=pnginfo)
+    img.close()
+
     return save_path
 
 
