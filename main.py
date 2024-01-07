@@ -3,13 +3,12 @@ import ctypes
 import tkinter as tk
 from tkinter import messagebox
 
-from PIL import Image, PngImagePlugin
+from multiprocessing import Queue, Process
+
+from PIL import Image, PngImagePlugin  # type: ignore
 from tkinterdnd2 import DND_FILES, TkinterDnD  # type: ignore
 
 HINT_WATING = "请拖拽PNG文件(们)到这里\nDrag and drop PNG file(s) here"
-
-label = None
-
 
 def clear_png(png_path: str):
     """Remove unnecessary PNG metadata."""
@@ -35,46 +34,71 @@ def clear_png(png_path: str):
 
     return save_path
 
+class ConverResult:
+    def __init__(self, success: bool, msg: str):
+        self.success = success
+        self.msg = msg
 
-def parse_dropped_files(data: str):
-    """Parse the dropped file paths from tkinterdnd2 event data."""
-    files = data.strip('{}').split('} {')
-    return [file.replace(r'/', "\\") for file in files]
+    def is_success(self):
+        return self.success
 
+def worker(inq, outq):
+    while True:
+        path = inq.get()
+        try:
+            cleared_path = clear_png(path)
+            outq.put(ConverResult(True, cleared_path))
+        except Exception as e:
+            outq.put(ConverResult(False, str(e)))
 
-def hint_processing(parsed_files: list[str]):
-    """Show a hint of processing"""
-    global label
-    num_files = len(parsed_files)
-    cn_hint = f"正在处理{num_files}个文件，请稍后..."
-    en_hint = f"Processing {num_files} files, please waitint..."
-    assert label is not None
-    label.config(text=f"{cn_hint}\n{en_hint}")
-    label.update()
+class ClearHandler:
+    def __init__(self, label):
+        self.label = label
 
+        self.inq = Queue()
+        self.outq = Queue()
+        self.process = Process(target=worker, args=(self.inq, self.outq))
+        self.process.start()
+
+        self.num_processing = 0
+
+    def add(self, path: str):
+        self.num_processing += 1
+        self.hint()
+        self.inq.put(path)
+
+    def add_files(self, event_data: str):
+        files = str(event_data).strip('{}').split('} {')
+        files = [file.replace(r'/', "\\") for file in files]
+        for file in files:
+            self.add(file)
+
+    def check(self):
+        while not self.outq.empty():
+            result = self.outq.get()
+            self.num_processing -= 1
+            self.hint()
+            if not result.is_success():
+                messagebox.showerror("转换错误 Convert Error", f"\n{result.msg}")
+
+    def hint(self):
+        if self.num_processing > 0:
+            cn_hint = f"正在处理{self.num_processing}个文件，请稍后..."
+            en_hint = f"Processing {self.num_processing} files, please waiting..."
+            self.label.config(text=f"{cn_hint}\n{en_hint}")
+        else:
+            self.label.config(text=HINT_WATING)
+
+    def stop(self):
+        self.process.terminate()
+
+g_handler: ClearHandler | None = None
 
 def on_drop(event):
     """Handle file drop event"""
-    global label
-    assert label is not None
-
-    parsed_files = parse_dropped_files(event.data)
-    hint_processing(parsed_files)
-    try:
-        parsed_files = parse_dropped_files(event.data)
-        cleared_paths = [
-            clear_png(file)
-            for file in parse_dropped_files(event.data)
-        ]
-        messagebox.showinfo(
-            "成功 Success",
-            f"{parsed_files}"
-        )
-    except Exception as e:
-        # Show an error message
-        messagebox.showerror("错误 Error", f"\n{e}")
-    finally:
-        label.config(text=HINT_WATING)
+    global g_handler
+    assert g_handler is not None
+    g_handler.add_files(event.data)
 
 
 def gui():
@@ -89,7 +113,6 @@ def gui():
     root.iconbitmap(os.path.join(file_dir, "icon.ico"))
 
     # Create a label with instructions
-    global label
     label = tk.Label(
         root,
         text=HINT_WATING,
@@ -98,12 +121,19 @@ def gui():
     )
     label.pack()
 
+    # Start clear process
+    global g_handler
+    g_handler = ClearHandler(label)
+
     # Enable file dropping
     label.drop_target_register(DND_FILES)  # type: ignore
     label.dnd_bind('<<Drop>>', on_drop)    # type: ignore
 
     # Run the application
     root.mainloop()
+
+    # Stop clear process
+    g_handler.stop()
 
 
 if __name__ == "__main__":
