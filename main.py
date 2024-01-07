@@ -10,6 +10,7 @@ from tkinterdnd2 import DND_FILES, TkinterDnD  # type: ignore
 
 HINT_WATING = "请拖拽PNG文件(们)到这里\nDrag and drop PNG file(s) here"
 
+
 def clear_png(png_path: str):
     """Remove unnecessary PNG metadata."""
 
@@ -28,11 +29,12 @@ def clear_png(png_path: str):
         pnginfo.add_text(str(key), str(value))
 
     # Save
-        
+
     img.save(save_path, "png", pnginfo=pnginfo)
     img.close()
 
     return save_path
+
 
 class ConverResult:
     def __init__(self, success: bool, msg: str):
@@ -41,6 +43,7 @@ class ConverResult:
 
     def is_success(self):
         return self.success
+
 
 def worker(inq, outq):
     while True:
@@ -51,9 +54,11 @@ def worker(inq, outq):
         except Exception as e:
             outq.put(ConverResult(False, str(e)))
 
+
 class ClearHandler:
-    def __init__(self, label):
+    def __init__(self, label, windows):
         self.label = label
+        self.windows = windows
 
         self.inq = Queue()
         self.outq = Queue()
@@ -61,6 +66,7 @@ class ClearHandler:
         self.process.start()
 
         self.num_processing = 0
+        self.check()
 
     def add(self, path: str):
         self.num_processing += 1
@@ -80,11 +86,13 @@ class ClearHandler:
             self.hint()
             if not result.is_success():
                 messagebox.showerror("转换错误 Convert Error", f"\n{result.msg}")
+        self.windows.after(10, self.check)
+        
 
     def hint(self):
         if self.num_processing > 0:
-            cn_hint = f"正在处理{self.num_processing}个文件，请稍后..."
-            en_hint = f"Processing {self.num_processing} files, please waiting..."
+            cn_hint = f"正在处理{self.num_processing}个文件，您可以继续添加文件"
+            en_hint = f"Processing {self.num_processing} files, you can continue to add files"
             self.label.config(text=f"{cn_hint}\n{en_hint}")
         else:
             self.label.config(text=HINT_WATING)
@@ -92,7 +100,9 @@ class ClearHandler:
     def stop(self):
         self.process.terminate()
 
+
 g_handler: ClearHandler | None = None
+
 
 def on_drop(event):
     """Handle file drop event"""
@@ -123,7 +133,7 @@ def gui():
 
     # Start clear process
     global g_handler
-    g_handler = ClearHandler(label)
+    g_handler = ClearHandler(label, root)
 
     # Enable file dropping
     label.drop_target_register(DND_FILES)  # type: ignore
